@@ -645,7 +645,12 @@ class SeamlessInteractionFS:
 
         # Features (NPY files)
         for feature_group, features in ALL_FEATURES.items():
-            if feature_group in ["smplh", "boxes_and_keypoints", "movement"]:
+            if feature_group in [
+                "smplh",
+                "boxes_and_keypoints",
+                "movement",
+                "movement_v4",
+            ]:
                 for feature in features:
                     paths.append(
                         f"{base_url}/{label}/{split}/{feature_group}/{feature}/{file_id}.npy"
@@ -1000,8 +1005,46 @@ class SeamlessInteractionFS:
 
         except Exception as e:
             if isinstance(e, HTTPError) and e.code == 403:
-                logger.info(f"Skipping {url}")
+                logger.info(f"Skipping {url} (data not available)")
                 return
             else:
                 logger.error(f"Failed to download {url}: {e}")
                 raise
+
+    def check_movement_v4_availability(
+        self, file_id: str, timeout: int = 10
+    ) -> dict[str, bool]:
+        """
+        Check which movement_v4 features are available for a given file ID.
+
+        Args:
+            file_id: The file ID to check
+            timeout: Request timeout in seconds
+
+        Returns:
+            Dict mapping feature names to availability (True/False)
+
+        Note:
+            Movement v4 data is being gradually rolled out. This method helps
+            determine which features are currently available for a specific file.
+        """
+        import requests
+
+        paths = self.get_path_list_for_file_id_s3(file_id)
+        movement_v4_paths = [p for p in paths if "movement_v4" in p]
+
+        availability = {}
+        for feature in ALL_FEATURES["movement_v4"]:
+            feature_path = next(
+                (p for p in movement_v4_paths if f"movement_v4/{feature}/" in p), None
+            )
+            if feature_path is None:
+                availability[feature] = False
+            else:
+                try:
+                    response = requests.head(feature_path, timeout=timeout)
+                    availability[feature] = response.status_code == 200
+                except requests.RequestException:
+                    availability[feature] = False
+
+        return availability

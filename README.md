@@ -40,6 +40,13 @@
 
 </div>
 
+## 📰 News
+
+**December 2025** - Imitator v4 features now available! Enhanced movement analysis with 17 feature types including improved emotion detection, facial action units, and new occlusion tracking. Access via `movement_v4/` directory in all splits.
+
+> [!NOTE]
+> Movement v4 data is being gradually rolled out across the dataset. While the infrastructure supports all files, some file IDs may not have v4 features available yet. Check file availability before processing.
+
 ## Overview
 
 Human communication involves a complex interplay of verbal and nonverbal signals, essential for conveying meaning and achieving interpersonal goals.

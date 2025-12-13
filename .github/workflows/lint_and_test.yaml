@@ -41,7 +41,7 @@ jobs:
       - name: Formatting
         run: uvx ruff format --check . --diff
       - name: Type Consistency
-        run: uvx --with=types-PyYAML mypy src/seamless_interaction
+        run: uvx --with=types-PyYAML --with=types-requests mypy src/seamless_interaction
       - name: Unit Test
         run: uv run pytest -rP --verbose tests/
 

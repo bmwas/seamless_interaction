@@ -39,6 +39,25 @@ ALL_FEATURES: Final = {
         "is_valid",
         "emotion_scores",
     ],
+    "movement_v4": [  # npy
+        "head_encodings",
+        "gaze_encodings",
+        "expression",
+        "frame_latent",
+        "alignment_head_rotation",
+        "alignment_translation",
+        "emotion_scores",
+        "emotion_valence",
+        "emotion_arousal",
+        "FAUValue",
+        "FAUToken",
+        "EmotionValenceToken",
+        "EmotionArousalToken",
+        "hypernet_features",
+        "is_valid",
+        "is_occluded",
+        "pred_vertices",
+    ],
     "metadata": [  # json
         "transcript",  # (optional)
         "vad",  # (required)
