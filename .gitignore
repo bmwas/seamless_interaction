@@ -22,9 +22,13 @@ __pycache__/
 # Other
 .DS_Store
 
-# venv
+# venv / virtualenv
 venv/
 .venv/
+virtualenv/
+
+# Environment variables (secrets)
+.env
 
 # mypy
 .mypy_cache/

@@ -14,6 +14,10 @@ Usage (from repo root, with package installed):
   python scripts/download_and_segment_participant.py --file_id V00_S0809_I00000309_P0947
 
 Requires: ffmpeg on PATH for video/audio segment extraction.
+
+Interviewee-only: Dataset assets do not provide which participant is interviewer vs
+interviewee (no A/B mapping). Use --interviewee_file_ids or --interviewee_list only
+when you have an external mapping (e.g. from dataset maintainers or your own labeling).
 """
 
 import argparse
@@ -57,14 +61,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--file_id",
         type=str,
-        required=True,
-        help="File ID (e.g. V00_S0809_I00000309_P0947) from assets/filelist.csv",
+        default=None,
+        help="File ID (e.g. V00_S0809_I00000309_P0947). If omitted, use first subject from filelist (reference for later looping over all).",
     )
     parser.add_argument(
         "--filelist",
         type=str,
         default=str(_REPO_ROOT / "assets" / "filelist.csv"),
-        help="Path to filelist.csv",
+        help="Path to filelist.csv (default: assets/filelist.csv)",
     )
     parser.add_argument(
         "--local_dir",
@@ -83,6 +87,20 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         dest="require_imitator_movement",
         help="Do not require has_imitator_movement",
+    )
+    parser.add_argument(
+        "--interviewee_file_ids",
+        type=str,
+        default=None,
+        metavar="CSV_PATH",
+        help="Path to CSV with file_id column (and optionally role). Only these file_ids are considered (e.g. interviewee-only). Requires external mapping; assets do not provide A/B.",
+    )
+    parser.add_argument(
+        "--interviewee_list",
+        type=str,
+        default=None,
+        metavar="TXT_PATH",
+        help="Path to plain text file with one file_id per line. Only these file_ids are considered (e.g. interviewee-only). Requires external mapping.",
     )
     return parser.parse_args()
 
@@ -104,6 +122,74 @@ def validate_file_id_in_filelist(file_id: str, filelist_path: str, require_imita
     return r
 
 
+def load_allowed_file_ids(
+    interviewee_file_ids_path: str | None,
+    interviewee_list_path: str | None,
+) -> set[str] | None:
+    """
+    Load set of allowed file_ids from CSV (file_id column) or plain list (one per line).
+    Returns None if neither path is set. Raises if both are set (use one).
+    """
+    if interviewee_file_ids_path is not None and interviewee_list_path is not None:
+        raise ValueError(
+            "Use only one of --interviewee_file_ids or --interviewee_list, not both."
+        )
+    if interviewee_file_ids_path is None and interviewee_list_path is None:
+        return None
+    path = interviewee_file_ids_path or interviewee_list_path
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Interviewee file list not found: {path}")
+    allowed = set()
+    if interviewee_file_ids_path is not None:
+        df = pd.read_csv(path)
+        if "file_id" not in df.columns:
+            raise ValueError(f"CSV {path} must have a 'file_id' column.")
+        allowed = set(df["file_id"].astype(str).str.strip())
+    else:
+        with open(path) as f:
+            for line in f:
+                fid = line.strip()
+                if fid:
+                    allowed.add(fid)
+    return allowed
+
+
+def get_first_file_id(
+    filelist_path: str,
+    require_imitator: bool,
+    allowed_file_ids: set[str] | None = None,
+) -> str:
+    """Return the first file_id from filelist (optionally with has_imitator_movement==1 and in allowed_file_ids)."""
+    if not os.path.isfile(filelist_path):
+        raise FileNotFoundError(f"Filelist not found: {filelist_path}")
+    df = pd.read_csv(filelist_path)
+    if require_imitator:
+        df = df[df.get("has_imitator_movement", 0) == 1]
+    if allowed_file_ids is not None:
+        df = df[df["file_id"].astype(str).isin(allowed_file_ids)]
+    if df.empty:
+        raise ValueError(
+            "No rows in filelist matching criteria (has_imitator_movement and/or interviewee list). "
+            "Use --no_require_imitator_movement or check --interviewee_file_ids/--interviewee_list."
+        )
+    return str(df.iloc[0]["file_id"])
+
+
+def _ensure_directory_writable(base_path: str) -> None:
+    """Ensure base_path exists and is writable; raise with a clear message if not."""
+    os.makedirs(base_path, exist_ok=True)
+    probe = os.path.join(base_path, ".write_probe")
+    try:
+        with open(probe, "w") as f:
+            f.write("")
+        os.remove(probe)
+    except OSError as e:
+        raise PermissionError(
+            f"Cannot write to {base_path}: {e}. "
+            "Fix permissions (e.g. sudo chown -R $USER ...) and retry."
+        ) from e
+
+
 def download_participant(
     file_id: str,
     filelist_path: str,
@@ -117,6 +203,11 @@ def download_participant(
     batch_idx = int(row["batch_idx"])
     archive_idx = int(row["archive_idx"])
 
+    base_path = os.path.join(
+        local_dir, label, split, f"{batch_idx:04d}", f"{archive_idx:04d}"
+    )
+    _ensure_directory_writable(base_path)
+
     config = DatasetConfig(
         label=label,
         split=split,
@@ -124,12 +215,9 @@ def download_participant(
         preferred_vendors_only=True,
     )
     fs = SeamlessInteractionFS(config=config, filelist_path=filelist_path)
-    print(f"Downloading {file_id} from S3...")
-    fs.gather_file_id_data_from_s3(file_id)
+    print(f"Downloading {file_id} from S3 (one file at a time for consistency)...")
+    fs.gather_file_id_data_from_s3(file_id, num_workers=1)
 
-    base_path = os.path.join(
-        local_dir, label, split, f"{batch_idx:04d}", f"{archive_idx:04d}"
-    )
     mp4_path = os.path.join(base_path, f"{file_id}.mp4")
     wav_path = os.path.join(base_path, f"{file_id}.wav")
     npz_path = os.path.join(base_path, f"{file_id}.npz")
@@ -309,6 +397,7 @@ def write_segment_metadata(
     end_frame: int,
     start_time: float,
     end_time: float,
+    duration_seconds: float,
     dominant_emotion_index: int,
 ) -> None:
     metadata = {
@@ -316,12 +405,46 @@ def write_segment_metadata(
         "end_frame": int(end_frame),
         "start_time": start_time,
         "end_time": end_time,
+        "duration_seconds": duration_seconds,
         "dominant_emotion_index": int(dominant_emotion_index),
         "dominant_emotion_name": EMOTION_NAMES[int(dominant_emotion_index)],
     }
     path = os.path.join(segment_dir, "metadata.json")
     with open(path, "w") as f:
         json.dump(metadata, f, indent=2)
+
+
+def write_segment_emotion_json(
+    segment_dir: str,
+    npz_path: str,
+    start_frame: int,
+    end_frame: int,
+    dominant_emotion_index: int,
+) -> None:
+    """
+    Write human-readable segment_data.json with valence, arousal, emotion_scores
+    (per-frame lists) and dominant emotion, so you can open and read in a text editor.
+    """
+    data = np.load(npz_path)
+    out = {
+        "dominant_emotion_index": int(dominant_emotion_index),
+        "dominant_emotion_name": EMOTION_NAMES[int(dominant_emotion_index)],
+        "emotion_names": EMOTION_NAMES,
+    }
+    for key, json_key in (
+        ("movement:emotion_valence", "valence"),
+        ("movement:emotion_arousal", "arousal"),
+        ("movement:emotion_scores", "emotion_scores"),
+    ):
+        if key not in data:
+            continue
+        arr = np.asarray(data[key])
+        if arr.ndim >= 1 and arr.shape[0] >= end_frame:
+            sl = np.squeeze(arr[start_frame:end_frame])
+            out[json_key] = sl.tolist()
+    path = os.path.join(segment_dir, "segment_data.json")
+    with open(path, "w") as f:
+        json.dump(out, f, indent=2)
 
 
 def process_segments(
@@ -341,8 +464,10 @@ def process_segments(
     os.makedirs(segments_dir, exist_ok=True)
 
     for idx, (start_frame, end_frame, emotion_index) in enumerate(segments):
+        # Single source of truth per segment: audio and video must use the same window.
         start_time = start_frame / fps
         end_time = end_frame / fps
+        duration_seconds = end_time - start_time
         seg_name = f"segment_{idx:03d}"
         segment_dir = os.path.join(segments_dir, seg_name)
         os.makedirs(segment_dir, exist_ok=True)
@@ -353,7 +478,16 @@ def process_segments(
         extract_audio_segment_ffmpeg(wav_path, out_wav, start_time, end_time)
         slice_npz_by_frames(npz_path, start_frame, end_frame, segment_dir)
         write_segment_metadata(
-            segment_dir, start_frame, end_frame, start_time, end_time, emotion_index
+            segment_dir,
+            start_frame,
+            end_frame,
+            start_time,
+            end_time,
+            duration_seconds,
+            emotion_index,
+        )
+        write_segment_emotion_json(
+            segment_dir, npz_path, start_frame, end_frame, emotion_index
         )
         print(f"  Wrote {seg_name} ({start_time:.2f}s–{end_time:.2f}s, {EMOTION_NAMES[emotion_index]})")
 
@@ -375,6 +509,22 @@ def main() -> None:
     filelist_path = args.filelist
     local_dir = args.local_dir
     require_imitator = args.require_imitator_movement
+
+    allowed_file_ids = load_allowed_file_ids(
+        args.interviewee_file_ids,
+        args.interviewee_list,
+    )
+    if allowed_file_ids is not None:
+        print(f"Interviewee filter: {len(allowed_file_ids)} file_id(s) from external mapping.")
+
+    if file_id is None:
+        file_id = get_first_file_id(filelist_path, require_imitator, allowed_file_ids)
+        print(f"Using first subject from filelist: {file_id}")
+    elif allowed_file_ids is not None and file_id not in allowed_file_ids:
+        raise ValueError(
+            f"file_id {file_id} is not in the interviewee list ({len(allowed_file_ids)} ids). "
+            "Only file_ids from --interviewee_file_ids/--interviewee_list are allowed when set."
+        )
 
     base_path = download_participant(
         file_id, filelist_path, local_dir, require_imitator

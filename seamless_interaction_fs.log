@@ -1,0 +1,39 @@
+2026-02-14 22:57:37,908 - INFO - Loaded filelist with 129370 entries
+2026-02-14 22:57:37,916 - INFO - Found 50 files for V00_S0809_I00000309_P0947
+2026-02-14 22:57:48,953 - ERROR - Failed to download https://dl.fbaipublicfiles.com/seamless_interaction/improvised/dev/audio/V00_S0809_I00000309_P0947.wav: [Errno 13] Permission denied: '/home/benson/datasets/seamless_interaction/improvised/dev/0000/0000/V00_S0809_I00000309_P0947.wav'
+2026-02-14 22:57:53,020 - INFO - Skipping optional file movement_v4/pred_vertices/V00_S0809_I00000309_P0947.npy
+2026-02-14 22:57:53,342 - INFO - Skipping optional file annotations/1P-IS/V00_S0809_I00000309_P0947.json
+2026-02-14 22:57:53,402 - INFO - Skipping optional file annotations/3P-R/V00_S0809_I00000309_P0947.json
+2026-02-14 22:57:53,883 - INFO - Skipping optional file annotations/1P-R/V00_S0809_I00000309_P0947.json
+2026-02-14 22:57:53,883 - INFO - Skipping optional file annotations/3P-V/V00_S0809_I00000309_P0947.json
+2026-02-14 22:57:54,358 - INFO - Skipping optional file annotations/3P-IS/V00_S0809_I00000309_P0947.json
+2026-02-14 23:06:08,093 - INFO - Loaded filelist with 129370 entries
+2026-02-14 23:06:08,102 - INFO - Found 50 files for V00_S0809_I00000309_P0947
+2026-02-14 23:06:47,351 - INFO - Skipping optional file movement_v4/pred_vertices/V00_S0809_I00000309_P0947.npy
+2026-02-14 23:06:48,441 - INFO - Skipping optional file annotations/1P-IS/V00_S0809_I00000309_P0947.json
+2026-02-14 23:06:48,850 - INFO - Skipping optional file annotations/1P-R/V00_S0809_I00000309_P0947.json
+2026-02-14 23:06:49,443 - INFO - Skipping optional file annotations/3P-IS/V00_S0809_I00000309_P0947.json
+2026-02-14 23:06:49,888 - INFO - Skipping optional file annotations/3P-R/V00_S0809_I00000309_P0947.json
+2026-02-14 23:06:50,466 - INFO - Skipping optional file annotations/3P-V/V00_S0809_I00000309_P0947.json
+2026-02-14 23:06:50,593 - INFO - Saved 40 numpy arrays to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000/V00_S0809_I00000309_P0947.npz
+2026-02-14 23:06:50,593 - INFO - Successfully processed file V00_S0809_I00000309_P0947 to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000
+2026-02-14 23:15:47,912 - INFO - Loaded filelist with 129370 entries
+2026-02-14 23:15:47,921 - INFO - Found 50 files for V00_S0644_I00000129_P0799
+2026-02-14 23:16:44,007 - INFO - Skipping optional file movement_v4/pred_vertices/V00_S0644_I00000129_P0799.npy
+2026-02-14 23:16:45,645 - INFO - Skipping optional file annotations/1P-IS/V00_S0644_I00000129_P0799.json
+2026-02-14 23:16:46,054 - INFO - Skipping optional file annotations/1P-R/V00_S0644_I00000129_P0799.json
+2026-02-14 23:16:46,541 - INFO - Skipping optional file annotations/3P-IS/V00_S0644_I00000129_P0799.json
+2026-02-14 23:16:46,922 - INFO - Skipping optional file annotations/3P-R/V00_S0644_I00000129_P0799.json
+2026-02-14 23:16:47,425 - INFO - Skipping optional file annotations/3P-V/V00_S0644_I00000129_P0799.json
+2026-02-14 23:16:47,557 - INFO - Saved 40 numpy arrays to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000/V00_S0644_I00000129_P0799.npz
+2026-02-14 23:16:47,557 - INFO - Successfully processed file V00_S0644_I00000129_P0799 to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000
+2026-02-14 23:44:48,960 - INFO - Loaded filelist with 129370 entries
+2026-02-14 23:44:48,969 - INFO - Found 50 files for V00_S0644_I00000129_P0799
+2026-02-14 23:45:31,311 - INFO - Skipping optional file movement_v4/pred_vertices/V00_S0644_I00000129_P0799.npy
+2026-02-14 23:45:32,343 - INFO - Skipping optional file annotations/1P-IS/V00_S0644_I00000129_P0799.json
+2026-02-14 23:45:32,752 - INFO - Skipping optional file annotations/1P-R/V00_S0644_I00000129_P0799.json
+2026-02-14 23:45:33,359 - INFO - Skipping optional file annotations/3P-IS/V00_S0644_I00000129_P0799.json
+2026-02-14 23:45:33,823 - INFO - Skipping optional file annotations/3P-R/V00_S0644_I00000129_P0799.json
+2026-02-14 23:45:34,384 - INFO - Skipping optional file annotations/3P-V/V00_S0644_I00000129_P0799.json
+2026-02-14 23:45:34,529 - INFO - Saved 40 numpy arrays to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000/V00_S0644_I00000129_P0799.npz
+2026-02-14 23:45:34,529 - INFO - Successfully processed file V00_S0644_I00000129_P0799 to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000

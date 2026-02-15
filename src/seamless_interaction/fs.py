@@ -729,8 +729,9 @@ class SeamlessInteractionFS:
             local_dir, label, split, f"{batch_idx:04d}", f"{archive_idx:04d}"
         )
         os.makedirs(target_path, exist_ok=True)
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        # Use a temp dir on the same filesystem as target_path to avoid
+        # "Invalid cross-device link" when moving from /tmp to target_path.
+        with tempfile.TemporaryDirectory(dir=target_path) as tmp_dir:
             with mp.Manager() as manager:
                 # Create managed dictionaries for proper multiprocessing synchronization
                 shared_np_data = manager.dict()
