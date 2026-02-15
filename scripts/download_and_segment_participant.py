@@ -320,27 +320,27 @@ def get_video_fps_and_frame_count(video_path: str) -> tuple[float, int]:
     return float(fps), count
 
 
+# Precision for ffmpeg time args so video and audio get identical start/duration.
+_FFMPEG_TIME_PRECISION = 9
+
+
 def extract_video_segment_ffmpeg(
     input_mp4: str,
     output_mp4: str,
     start_time: float,
-    end_time: float,
+    duration_seconds: float,
 ) -> None:
-    """Extract [start_time, end_time] from input_mp4 into output_mp4 using ffmpeg."""
-    duration = end_time - start_time
+    """Extract segment from input_mp4 using exact start_time and duration_seconds (same values as audio for sync)."""
+    start_s = format(start_time, f".{_FFMPEG_TIME_PRECISION}f")
+    duration_s = format(duration_seconds, f".{_FFMPEG_TIME_PRECISION}f")
     cmd = [
         "ffmpeg",
         "-y",
-        "-ss",
-        str(start_time),
-        "-i",
-        input_mp4,
-        "-t",
-        str(duration),
-        "-c",
-        "copy",
-        "-avoid_negative_ts",
-        "1",
+        "-ss", start_s,
+        "-i", input_mp4,
+        "-t", duration_s,
+        "-c", "copy",
+        "-avoid_negative_ts", "1",
         output_mp4,
     ]
     subprocess.run(cmd, check=True, capture_output=True)
@@ -350,21 +350,18 @@ def extract_audio_segment_ffmpeg(
     input_wav: str,
     output_wav: str,
     start_time: float,
-    end_time: float,
+    duration_seconds: float,
 ) -> None:
-    """Extract [start_time, end_time] from input_wav into output_wav using ffmpeg."""
-    duration = end_time - start_time
+    """Extract segment from input_wav using exact start_time and duration_seconds (same values as video for sync)."""
+    start_s = format(start_time, f".{_FFMPEG_TIME_PRECISION}f")
+    duration_s = format(duration_seconds, f".{_FFMPEG_TIME_PRECISION}f")
     cmd = [
         "ffmpeg",
         "-y",
-        "-ss",
-        str(start_time),
-        "-i",
-        input_wav,
-        "-t",
-        str(duration),
-        "-acodec",
-        "copy",
+        "-ss", start_s,
+        "-i", input_wav,
+        "-t", duration_s,
+        "-acodec", "copy",
         output_wav,
     ]
     subprocess.run(cmd, check=True, capture_output=True)
@@ -414,6 +411,17 @@ def write_segment_metadata(
         json.dump(metadata, f, indent=2)
 
 
+def _is_emotion_key(key: str) -> bool:
+    """True if this NPZ key is emotion-related (valence, arousal, scores, tokens)."""
+    k = key.lower()
+    return (
+        "emotion" in k
+        or "valence" in k
+        or "arousal" in k
+        or key in ("movement:EmotionArousalToken", "movement:EmotionValenceToken")
+    )
+
+
 def write_segment_emotion_json(
     segment_dir: str,
     npz_path: str,
@@ -422,8 +430,10 @@ def write_segment_emotion_json(
     dominant_emotion_index: int,
 ) -> None:
     """
-    Write human-readable segment_data.json with valence, arousal, emotion_scores
-    (per-frame lists) and dominant emotion, so you can open and read in a text editor.
+    Write segment_data.json with valence, arousal, ALL emotion labels (emotion_scores:
+    Anger, Contempt, Disgust, Fear, Happiness, Neutral, Sadness, Surprise), and any
+    other emotion-related arrays (e.g. EmotionValenceToken, EmotionArousalToken).
+    All per-frame; human-readable.
     """
     data = np.load(npz_path)
     out = {
@@ -431,17 +441,15 @@ def write_segment_emotion_json(
         "dominant_emotion_name": EMOTION_NAMES[int(dominant_emotion_index)],
         "emotion_names": EMOTION_NAMES,
     }
-    for key, json_key in (
-        ("movement:emotion_valence", "valence"),
-        ("movement:emotion_arousal", "arousal"),
-        ("movement:emotion_scores", "emotion_scores"),
-    ):
-        if key not in data:
+    for key in data.files:
+        if not _is_emotion_key(key):
             continue
         arr = np.asarray(data[key])
-        if arr.ndim >= 1 and arr.shape[0] >= end_frame:
-            sl = np.squeeze(arr[start_frame:end_frame])
-            out[json_key] = sl.tolist()
+        if arr.ndim < 1 or arr.shape[0] < end_frame:
+            continue
+        sl = np.squeeze(arr[start_frame:end_frame])
+        json_key = key.replace(":", "_")
+        out[json_key] = sl.tolist()
     path = os.path.join(segment_dir, "segment_data.json")
     with open(path, "w") as f:
         json.dump(out, f, indent=2)
@@ -464,7 +472,8 @@ def process_segments(
     os.makedirs(segments_dir, exist_ok=True)
 
     for idx, (start_frame, end_frame, emotion_index) in enumerate(segments):
-        # Single source of truth per segment: audio and video must use the same window.
+        # Single source of truth: one start_time and one duration_seconds for BOTH video and audio.
+        # Both extractors receive the exact same numeric values so .wav and .mp4 are 100% synced.
         start_time = start_frame / fps
         end_time = end_frame / fps
         duration_seconds = end_time - start_time
@@ -474,8 +483,8 @@ def process_segments(
 
         out_mp4 = os.path.join(segment_dir, "video.mp4")
         out_wav = os.path.join(segment_dir, "audio.wav")
-        extract_video_segment_ffmpeg(mp4_path, out_mp4, start_time, end_time)
-        extract_audio_segment_ffmpeg(wav_path, out_wav, start_time, end_time)
+        extract_video_segment_ffmpeg(mp4_path, out_mp4, start_time, duration_seconds)
+        extract_audio_segment_ffmpeg(wav_path, out_wav, start_time, duration_seconds)
         slice_npz_by_frames(npz_path, start_frame, end_frame, segment_dir)
         write_segment_metadata(
             segment_dir,

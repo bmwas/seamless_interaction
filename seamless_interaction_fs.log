@@ -37,3 +37,5 @@
 2026-02-14 23:45:34,384 - INFO - Skipping optional file annotations/3P-V/V00_S0644_I00000129_P0799.json
 2026-02-14 23:45:34,529 - INFO - Saved 40 numpy arrays to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000/V00_S0644_I00000129_P0799.npz
 2026-02-14 23:45:34,529 - INFO - Successfully processed file V00_S0644_I00000129_P0799 to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000
+2026-02-15 00:37:11,710 - INFO - Loaded filelist with 129370 entries
+2026-02-15 00:37:11,718 - INFO - Found 50 files for V00_S0644_I00000129_P0799
