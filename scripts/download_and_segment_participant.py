@@ -52,6 +52,12 @@ EMOTION_NAMES = [
 MIN_SEGMENT_FRAMES = 90   # 3 s at 30 Hz
 MAX_SEGMENT_FRAMES = 300  # 10 s at 30 Hz
 DEFAULT_FPS = 30.0
+# Minimum fraction of segment duration that must be speech (person talking) to keep segment.
+MIN_SPEECH_FRACTION = 0.5
+# Minimum length of continuous speech (no pause) required in a segment (seconds).
+MIN_CONTINUOUS_SPEECH_SEC = 3.0
+# Max gap between speech intervals to treat as same turn (seconds). Gaps below this = thinking pause; above = waiting for interviewer.
+VAD_MERGE_GAP_SEC = 2.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -101,6 +107,27 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="TXT_PATH",
         help="Path to plain text file with one file_id per line. Only these file_ids are considered (e.g. interviewee-only). Requires external mapping.",
+    )
+    parser.add_argument(
+        "--min_speech_fraction",
+        type=float,
+        default=0.5,
+        metavar="F",
+        help="Minimum fraction of segment duration that must be speech (person talking). 0.5 = must be talking 50%% of the time (default). Use a lower value (e.g. 0.3) if no segments remain.",
+    )
+    parser.add_argument(
+        "--min_continuous_speech",
+        type=float,
+        default=MIN_CONTINUOUS_SPEECH_SEC,
+        metavar="SEC",
+        help=f"Minimum length of continuous speech in segment, in seconds (default: {MIN_CONTINUOUS_SPEECH_SEC:.0f}). Segments without this much speech (after merging thinking pauses) are dropped.",
+    )
+    parser.add_argument(
+        "--vad_merge_gap",
+        type=float,
+        default=VAD_MERGE_GAP_SEC,
+        metavar="SEC",
+        help=f"Max gap between speech intervals to merge as same turn, in seconds (default: {VAD_MERGE_GAP_SEC:.1f}). Gaps below this = thinking pause (merged); above = waiting for other person (split).",
     )
     return parser.parse_args()
 
@@ -282,27 +309,159 @@ def find_uniform_emotion_runs(dominant: np.ndarray) -> list[tuple[int, int, int]
 
 def split_runs_into_segments(
     runs: list[tuple[int, int, int]],
+    fps: float,
 ) -> list[tuple[int, int, int]]:
     """
     Apply length rules: drop < 3 s, keep 3–10 s as one segment, break > 10 s into 10 s chunks.
+    Uses fps so max duration never exceeds 10 s in wall-clock time (e.g. 29.97 fps -> 299 frames).
     Returns list of (start_frame, end_frame, emotion_index).
     """
+    max_frames = min(MAX_SEGMENT_FRAMES, int(fps * 10.0))
+    if max_frames < MIN_SEGMENT_FRAMES:
+        max_frames = MIN_SEGMENT_FRAMES
     segments = []
     for start, end, em in runs:
         n = end - start
         if n < MIN_SEGMENT_FRAMES:
             continue
-        if n <= MAX_SEGMENT_FRAMES:
+        if n <= max_frames:
             segments.append((start, end, em))
             continue
-        # Break into 10 s (300-frame) chunks; remainder >= 3 s kept, else dropped
+        # Break into max_frames (≤10 s) chunks; remainder ≥ 3 s kept, else dropped
         s = start
         while s < end:
-            seg_end = min(s + MAX_SEGMENT_FRAMES, end)
+            seg_end = min(s + max_frames, end)
             if seg_end - s >= MIN_SEGMENT_FRAMES:
                 segments.append((s, seg_end, em))
             s = seg_end
     return segments
+
+
+def load_speech_intervals_from_vad(json_path: str) -> list[tuple[float, float]]:
+    """
+    Load participant JSON and return list of (start, end) in seconds where the
+    participant is speaking. Uses metadata:vad; if present, also uses metadata:transcript
+    (phrase-level start/end) so we get longer runs when VAD is sparse.
+    """
+    if not os.path.isfile(json_path):
+        raise FileNotFoundError(
+            f"Participant JSON not found: {json_path}. Needed for VAD (speaking-only segments)."
+        )
+    with open(json_path) as f:
+        data = json.load(f)
+    intervals = []
+    vad = data.get("metadata:vad")
+    if vad is not None:
+        for entry in vad:
+            if "start" not in entry or "end" not in entry:
+                continue
+            if entry.get("is_speech", True) is True:
+                intervals.append((float(entry["start"]), float(entry["end"])))
+    transcript = data.get("metadata:transcript")
+    if transcript is not None:
+        for entry in transcript:
+            if "start" in entry and "end" in entry:
+                intervals.append((float(entry["start"]), float(entry["end"])))
+    if not intervals:
+        raise KeyError(
+            f"JSON {json_path} has no 'metadata:vad' or 'metadata:transcript' with start/end. "
+            "Required to keep only segments where the person is talking (not listening)."
+        )
+    # #region agent log
+    try:
+        _dbg = open("/home/benson/Downloads/seamless_interaction/.cursor/debug.log", "a")
+        _dbg.write(json.dumps({"id": "vad_load", "timestamp": __import__("time").time() * 1000, "location": "load_speech_intervals_from_vad", "message": "VAD loaded", "data": {"json_path": json_path, "vad_len": len(vad) if vad else 0, "transcript_len": len(transcript) if transcript else 0, "intervals_count": len(intervals), "first_interval": intervals[0] if intervals else None, "last_interval": intervals[-1] if len(intervals) > 1 else None}, "hypothesisId": "C"}) + "\n")
+        _dbg.close()
+    except Exception:
+        pass
+    # #endregion
+    return intervals
+
+
+def merge_speech_intervals(
+    intervals: list[tuple[float, float]],
+    max_gap_sec: float = VAD_MERGE_GAP_SEC,
+) -> list[tuple[float, float]]:
+    """Merge VAD intervals that are close (gap <= max_gap_sec) into continuous speech runs."""
+    if not intervals:
+        return []
+    sorted_intervals = sorted(intervals, key=lambda x: x[0])
+    merged = [list(sorted_intervals[0])]
+    for s, e in sorted_intervals[1:]:
+        if s <= merged[-1][1] + max_gap_sec:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+    return [(a, b) for a, b in merged]
+
+
+def segment_has_continuous_speech(
+    start_time: float,
+    end_time: float,
+    merged_runs: list[tuple[float, float]],
+    min_continuous_sec: float = MIN_CONTINUOUS_SPEECH_SEC,
+) -> bool:
+    """True if segment overlaps a continuous-speech run of length >= min_continuous_sec by at least min_continuous_sec."""
+    for run_start, run_end in merged_runs:
+        run_len = run_end - run_start
+        if run_len < min_continuous_sec:
+            continue
+        overlap_start = max(start_time, run_start)
+        overlap_end = min(end_time, run_end)
+        overlap_len = overlap_end - overlap_start
+        if overlap_len >= min_continuous_sec:
+            return True
+    return False
+
+
+def segment_speech_overlap_fraction(
+    start_time: float,
+    end_time: float,
+    speech_intervals: list[tuple[float, float]],
+) -> float:
+    """Return fraction of [start_time, end_time] covered by speech intervals (0..1)."""
+    if start_time >= end_time:
+        return 0.0
+    duration = end_time - start_time
+    total_speech = 0.0
+    for s, e in speech_intervals:
+        overlap_start = max(start_time, s)
+        overlap_end = min(end_time, e)
+        if overlap_end > overlap_start:
+            total_speech += overlap_end - overlap_start
+    return total_speech / duration if duration > 0 else 0.0
+
+
+def filter_segments_by_speech(
+    segments: list[tuple[int, int, int]],
+    fps: float,
+    speech_intervals: list[tuple[float, float]],
+    min_speech_fraction: float = MIN_SPEECH_FRACTION,
+) -> list[tuple[int, int, int]]:
+    """
+    Keep only segments where the participant is talking (VAD overlap >= min_speech_fraction).
+    Drops segments that are mostly listening.
+    """
+    kept = []
+    # #region agent log
+    _log_path = "/home/benson/Downloads/seamless_interaction/.cursor/debug.log"
+    # #endregion
+    for i, (start_frame, end_frame, em) in enumerate(segments):
+        start_time = start_frame / fps
+        end_time = end_frame / fps
+        frac = segment_speech_overlap_fraction(start_time, end_time, speech_intervals)
+        if frac >= min_speech_fraction:
+            kept.append((start_frame, end_frame, em))
+        # #region agent log
+        if i < 5:
+            try:
+                _dbg = open(_log_path, "a")
+                _dbg.write(json.dumps({"id": f"seg_{i}", "timestamp": __import__("time").time() * 1000, "location": "filter_segments_by_speech", "message": "segment overlap", "data": {"start_time": start_time, "end_time": end_time, "duration": end_time - start_time, "frac": frac, "kept": frac >= min_speech_fraction, "min_required": min_speech_fraction, "speech_intervals_len": len(speech_intervals)}, "hypothesisId": "A"}) + "\n")
+                _dbg.close()
+            except Exception:
+                pass
+        # #endregion
+    return kept
 
 
 def get_video_fps_and_frame_count(video_path: str) -> tuple[float, int]:
@@ -330,16 +489,20 @@ def extract_video_segment_ffmpeg(
     start_time: float,
     duration_seconds: float,
 ) -> None:
-    """Extract segment from input_mp4 using exact start_time and duration_seconds (same values as audio for sync)."""
+    """Extract segment from input_mp4 using exact start_time and duration_seconds (same values as audio for sync).
+    Uses -i then -ss (output seek) and re-encode so the segment is exactly [start_time, start_time+duration];
+    -ss before -i with -c copy would seek to keyframe and include extra content (e.g. interviewer)."""
     start_s = format(start_time, f".{_FFMPEG_TIME_PRECISION}f")
     duration_s = format(duration_seconds, f".{_FFMPEG_TIME_PRECISION}f")
     cmd = [
         "ffmpeg",
         "-y",
-        "-ss", start_s,
         "-i", input_mp4,
+        "-ss", start_s,
         "-t", duration_s,
-        "-c", "copy",
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-c:a", "aac",
         "-avoid_negative_ts", "1",
         output_mp4,
     ]
@@ -460,9 +623,11 @@ def process_segments(
     file_id: str,
     segments: list[tuple[int, int, int]],
     fps: float,
+    scores: np.ndarray,
 ) -> str:
     """
     For each segment: extract video/audio, slice NPZ, write metadata.
+    Dominant emotion per segment is argmax(mean(scores[start:end], axis=0)), not the run label.
     Returns path to segments directory.
     """
     mp4_path = os.path.join(base_path, f"{file_id}.mp4")
@@ -472,6 +637,10 @@ def process_segments(
     os.makedirs(segments_dir, exist_ok=True)
 
     for idx, (start_frame, end_frame, emotion_index) in enumerate(segments):
+        # Segment-level dominant: average emotion_scores over this segment, then argmax.
+        segment_scores = scores[start_frame:end_frame]
+        segment_dominant = int(np.argmax(np.mean(segment_scores, axis=0)))
+
         # Single source of truth: one start_time and one duration_seconds for BOTH video and audio.
         # Both extractors receive the exact same numeric values so .wav and .mp4 are 100% synced.
         start_time = start_frame / fps
@@ -493,12 +662,12 @@ def process_segments(
             start_time,
             end_time,
             duration_seconds,
-            emotion_index,
+            segment_dominant,
         )
         write_segment_emotion_json(
-            segment_dir, npz_path, start_frame, end_frame, emotion_index
+            segment_dir, npz_path, start_frame, end_frame, segment_dominant
         )
-        print(f"  Wrote {seg_name} ({start_time:.2f}s–{end_time:.2f}s, {EMOTION_NAMES[emotion_index]})")
+        print(f"  Wrote {seg_name} ({start_time:.2f}s–{end_time:.2f}s, {EMOTION_NAMES[segment_dominant]})")
 
     return segments_dir
 
@@ -551,14 +720,58 @@ def main() -> None:
 
     dominant = compute_dominant_emotion_per_frame(scores)
     runs = find_uniform_emotion_runs(dominant)
-    segments = split_runs_into_segments(runs)
+    segments = split_runs_into_segments(runs, fps)
 
     if not segments:
         print("No segments of 3–10 s with uniform dominant emotion found. Exiting.")
         return
 
-    print(f"Found {len(segments)} segments (3–10 s, uniform dominant emotion).")
-    segments_dir = process_segments(base_path, file_id, segments, fps)
+    json_path = os.path.join(base_path, f"{file_id}.json")
+    speech_intervals = load_speech_intervals_from_vad(json_path)
+    min_speech_fraction = args.min_speech_fraction
+    n_before = len(segments)
+    segments = filter_segments_by_speech(segments, fps, speech_intervals, min_speech_fraction)
+    # If threshold is strict and no segments pass, keep segments with any speech at all (exclude only pure listening).
+    if not segments and min_speech_fraction > 0:
+        runs = find_uniform_emotion_runs(dominant)
+        segments_full = split_runs_into_segments(runs, fps)
+        segments = filter_segments_by_speech(segments_full, fps, speech_intervals, 0.0)
+        if segments:
+            print(f"No segments had ≥{min_speech_fraction:.0%} speech; keeping {len(segments)} segment(s) that contain any speech (person talking at least briefly).")
+    n_dropped = n_before - len(segments) if segments else n_before
+    if n_dropped and segments:
+        print(f"Filtered out {n_dropped} segment(s) where participant was talking < {min_speech_fraction:.0%} of the time (kept only segments with ≥{min_speech_fraction:.0%} speech).")
+
+    if not segments:
+        print(
+            "No segments left after requiring participant to be talking (VAD). "
+            "No segment overlapped any speech interval. Exiting."
+        )
+        return
+
+    # Keep only segments that contain at least min_continuous_speech s of continuous speech (thinking pauses merged; waiting for other person = split).
+    min_continuous_speech = args.min_continuous_speech
+    vad_merge_gap = args.vad_merge_gap
+    merged_runs = merge_speech_intervals(speech_intervals, max_gap_sec=vad_merge_gap)
+    n_before_cont = len(segments)
+    segments = [
+        (sf, ef, em)
+        for sf, ef, em in segments
+        if segment_has_continuous_speech(sf / fps, ef / fps, merged_runs, min_continuous_speech)
+    ]
+    if n_before_cont > len(segments):
+        print(
+            f"Filtered out {n_before_cont - len(segments)} segment(s) without ≥{min_continuous_speech:.1f} s continuous speech (kept only segments with no pauses)."
+        )
+
+    if not segments:
+        print(
+            f"No segments left after requiring ≥{min_continuous_speech:.1f} s continuous speech. Exiting."
+        )
+        return
+
+    print(f"Found {len(segments)} segments (3–10 s, uniform emotion, ≥{min_continuous_speech:.1f} s continuous speech).")
+    segments_dir = process_segments(base_path, file_id, segments, fps, scores)
     delete_large_files(base_path, file_id)
     print("All done. Segments saved under {}; original video/audio/npz removed.".format(segments_dir))
 

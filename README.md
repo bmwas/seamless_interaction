@@ -146,6 +146,14 @@ fs.download_batch_from_hf(batch_idx=0)
 
 For more details, please refer to the [HuggingFace Download Example](./scripts/download_hf.py).
 
+#### Download and segment by emotion
+
+Download a single participant and segment by uniform dominant emotion (3–10 s segments, speaking-only, optional continuous-speech filter):
+
+```bash
+python scripts/download_and_segment_participant.py --file_id V00_S0809_I00000309_P0947 --min_continuous_speech 3 --vad_merge_gap 2
+```
+
 ### Working with Downloaded Data
 
 ```python
@@ -253,6 +261,7 @@ seamless_interaction/
 │   └── relationships.csv # Relationship information between participants per sessions
 ├── scripts/              # Example scripts for dataset usage
 │   ├── dataloader_webdataset.py
+│   ├── download_and_segment_participant.py
 │   ├── download_hf.py
 │   ├── download_s3.py
 ├── src/seamless_interaction/  # Main package source code
