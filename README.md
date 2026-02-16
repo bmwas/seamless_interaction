@@ -172,6 +172,9 @@ Run the batch script from the **repo root**. It reads `.env` in the repo for `HU
    # Optional: limit participants (e.g. for testing)
    python scripts/batch_segment_and_upload_hf.py --limit 5
 
+   # Start from scratch (clear progress log and process all participants again, e.g. first 10)
+   python scripts/batch_segment_and_upload_hf.py --limit 10 --from_scratch
+
    # Optional: change push frequency or paths
    python scripts/batch_segment_and_upload_hf.py --push_every_n 3 --local_dir /path/to/segments
    ```

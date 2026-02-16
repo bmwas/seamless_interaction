@@ -229,8 +229,8 @@ def build_and_push_dataset(
     hf_repo: str,
     token: str,
 ) -> None:
-    """Build Dataset from rows (Audio and Video typed for Hub viewer playback) and push to hub."""
-    from datasets import Audio, Dataset, Video, concatenate_datasets, load_dataset
+    """Build Dataset from rows (Parquet: video as binary, Audio with 48 kHz for viewer playback). push_to_hub does not support Video() feature."""
+    from datasets import Audio, Dataset, concatenate_datasets, load_dataset
 
     if not all_rows:
         return
@@ -269,9 +269,8 @@ def build_and_push_dataset(
         "metadata": metadata_strs,
         "segment_data": segment_data_strs,
     })
-    # Viewer playback: Audio with 48 kHz (dataset WAV rate); Video feature for player
+    # Video as binary (Video() not supported by push_to_hub). Audio with 48 kHz for Hub playback.
     d_new = d_new.cast_column("audio", Audio(sampling_rate=48000))
-    d_new = d_new.cast_column("video", Video())
     try:
         existing = load_dataset(hf_repo, token=token, split="train")
         d = concatenate_datasets([existing, d_new])
