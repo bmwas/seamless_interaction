@@ -100,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         metavar="N",
         help="Max number of participants to process (for testing)",
     )
+    parser.add_argument(
+        "--from_scratch",
+        action="store_true",
+        help="Ignore progress log and process all participants from the start (clears progress for --local_dir)",
+    )
     return parser.parse_args()
 
 
@@ -298,7 +303,12 @@ def main() -> None:
 
     local_dir = args.local_dir
     os.makedirs(local_dir, exist_ok=True)
-    progress = load_progress(local_dir)
+    if args.from_scratch:
+        progress = {}
+        save_progress(local_dir, progress)
+        print("From-scratch: progress log cleared.")
+    else:
+        progress = load_progress(local_dir)
     done = get_done_file_ids(progress)
 
     if not Path(args.filelist).is_file():

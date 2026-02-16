@@ -217,3 +217,17 @@
 2026-02-15 20:54:05,628 - INFO - Skipping optional file annotations/3P-V/V00_S0925_I00000538_P0383.json
 2026-02-15 20:54:05,822 - INFO - Saved 40 numpy arrays to /home/benson/Downloads/seamless_segment_dataset/improvised/dev/0000/0000/V00_S0925_I00000538_P0383.npz
 2026-02-15 20:54:05,822 - INFO - Successfully processed file V00_S0925_I00000538_P0383 to /home/benson/Downloads/seamless_segment_dataset/improvised/dev/0000/0000
+2026-02-15 21:00:56,165 - INFO - Loaded filelist with 129370 entries
+2026-02-15 21:00:56,173 - INFO - Found 50 files for V00_S1061_I00000168_P0731
+2026-02-15 21:02:03,987 - INFO - Skipping optional file movement_v4/pred_vertices/V00_S1061_I00000168_P0731.npy
+2026-02-15 21:02:05,616 - INFO - Skipping optional file annotations/1P-IS/V00_S1061_I00000168_P0731.json
+2026-02-15 21:02:06,001 - INFO - Skipping optional file annotations/1P-R/V00_S1061_I00000168_P0731.json
+2026-02-15 21:02:06,640 - INFO - Skipping optional file annotations/3P-IS/V00_S1061_I00000168_P0731.json
+2026-02-15 21:02:07,095 - INFO - Skipping optional file annotations/3P-R/V00_S1061_I00000168_P0731.json
+2026-02-15 21:02:07,665 - INFO - Skipping optional file annotations/3P-V/V00_S1061_I00000168_P0731.json
+2026-02-15 21:02:07,843 - INFO - Saved 40 numpy arrays to /home/benson/Downloads/seamless_segment_dataset/improvised/dev/0000/0000/V00_S1061_I00000168_P0731.npz
+2026-02-15 21:02:07,843 - INFO - Successfully processed file V00_S1061_I00000168_P0731 to /home/benson/Downloads/seamless_segment_dataset/improvised/dev/0000/0000
+2026-02-15 21:02:33,515 - INFO - Loaded filelist with 129370 entries
+2026-02-15 21:02:33,523 - INFO - Found 50 files for V00_S2025_I00001082_P1281A
+2026-02-15 21:05:23,596 - INFO - Loaded filelist with 129370 entries
+2026-02-15 21:05:23,603 - INFO - Found 50 files for V00_S2025_I00001082_P1281A
