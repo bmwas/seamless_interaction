@@ -154,6 +154,30 @@ Download a single participant and segment by uniform dominant emotion (3–10 s 
 python scripts/download_and_segment_participant.py --file_id V00_S0809_I00000309_P0947 --min_continuous_speech 3 --vad_merge_gap 2
 ```
 
+#### Batch segment all and upload to HuggingFace
+
+Run the batch script from the **repo root**. It reads `.env` in the repo for `HUGGINGFACE_TOKEN` and `HUGGINGFACE_USERNAME` (or `HUGGINGFACE_NAME`). **Do not commit `.env`** — it is listed in `.gitignore` for secrets.
+
+1. **One-time setup:** Create a `.env` file in the repo root with:
+   ```bash
+   HUGGINGFACE_TOKEN=hf_xxxxxxxx
+   HUGGINGFACE_USERNAME=your_username
+   ```
+
+2. **Execute (from repo root):**
+   ```bash
+   # Process all filelist participants (with has_imitator_movement=1), push to Hub every 2
+   python scripts/batch_segment_and_upload_hf.py
+
+   # Optional: limit participants (e.g. for testing)
+   python scripts/batch_segment_and_upload_hf.py --limit 5
+
+   # Optional: change push frequency or paths
+   python scripts/batch_segment_and_upload_hf.py --push_every_n 3 --local_dir /path/to/segments
+   ```
+
+   Segments are saved under `--local_dir` (default: `/home/benson/Downloads/seamless_segment_dataset`). Progress is logged in `{local_dir}/.batch_segment_progress.json`; already-successful participants are skipped on re-runs.
+
 ### Working with Downloaded Data
 
 ```python

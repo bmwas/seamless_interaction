@@ -157,3 +157,23 @@
 2026-02-15 12:12:08,163 - INFO - Skipping optional file annotations/3P-V/V00_S0809_I00000309_P0947.json
 2026-02-15 12:12:08,306 - INFO - Saved 40 numpy arrays to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000/V00_S0809_I00000309_P0947.npz
 2026-02-15 12:12:08,307 - INFO - Successfully processed file V00_S0809_I00000309_P0947 to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000
+2026-02-15 12:19:05,399 - INFO - Loaded filelist with 129370 entries
+2026-02-15 12:19:05,409 - INFO - Found 50 files for V00_S0809_I00000309_P0947
+2026-02-15 12:19:43,028 - INFO - Skipping optional file movement_v4/pred_vertices/V00_S0809_I00000309_P0947.npy
+2026-02-15 12:19:43,833 - INFO - Skipping optional file annotations/1P-IS/V00_S0809_I00000309_P0947.json
+2026-02-15 12:19:44,336 - INFO - Skipping optional file annotations/1P-R/V00_S0809_I00000309_P0947.json
+2026-02-15 12:19:44,872 - INFO - Skipping optional file annotations/3P-IS/V00_S0809_I00000309_P0947.json
+2026-02-15 12:19:45,279 - INFO - Skipping optional file annotations/3P-R/V00_S0809_I00000309_P0947.json
+2026-02-15 12:19:45,689 - INFO - Skipping optional file annotations/3P-V/V00_S0809_I00000309_P0947.json
+2026-02-15 12:19:45,826 - INFO - Saved 40 numpy arrays to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000/V00_S0809_I00000309_P0947.npz
+2026-02-15 12:19:45,826 - INFO - Successfully processed file V00_S0809_I00000309_P0947 to /home/benson/datasets/seamless_interaction/improvised/dev/0000/0000
+2026-02-15 20:27:56,782 - INFO - Loaded filelist with 129370 entries
+2026-02-15 20:27:56,794 - INFO - Found 50 files for V00_S0644_I00000129_P0799
+2026-02-15 20:28:39,942 - INFO - Skipping optional file movement_v4/pred_vertices/V00_S0644_I00000129_P0799.npy
+2026-02-15 20:28:40,804 - INFO - Skipping optional file annotations/1P-IS/V00_S0644_I00000129_P0799.json
+2026-02-15 20:28:41,217 - INFO - Skipping optional file annotations/1P-R/V00_S0644_I00000129_P0799.json
+2026-02-15 20:28:41,828 - INFO - Skipping optional file annotations/3P-IS/V00_S0644_I00000129_P0799.json
+2026-02-15 20:28:42,442 - INFO - Skipping optional file annotations/3P-R/V00_S0644_I00000129_P0799.json
+2026-02-15 20:28:42,862 - INFO - Skipping optional file annotations/3P-V/V00_S0644_I00000129_P0799.json
+2026-02-15 20:28:43,022 - INFO - Saved 40 numpy arrays to /home/benson/Downloads/seamless_segment_dataset/improvised/dev/0000/0000/V00_S0644_I00000129_P0799.npz
+2026-02-15 20:28:43,022 - INFO - Successfully processed file V00_S0644_I00000129_P0799 to /home/benson/Downloads/seamless_segment_dataset/improvised/dev/0000/0000

@@ -27,8 +27,10 @@ venv/
 .venv/
 virtualenv/
 
-# Environment variables (secrets)
+# Environment variables (secrets) - MUST NOT be pushed to GitHub
 .env
+.env.*
+!.env.example
 
 # mypy
 .mypy_cache/
