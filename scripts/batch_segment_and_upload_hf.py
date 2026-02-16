@@ -28,6 +28,7 @@ import pandas as pd
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_LOCAL_DIR = "/home/benson/Downloads/seamless_segment_dataset"
 _PROGRESS_FILENAME = ".batch_segment_progress.json"
+_DATASET_CARD_PATH = Path(__file__).resolve().parent / "seamless_segments_dataset_card.md"
 
 
 def load_dotenv(env_path: Path | None = None) -> None:
@@ -201,13 +202,30 @@ def collect_segment_rows(
     return rows
 
 
+def _upload_dataset_card(hf_repo: str, token: str) -> None:
+    """Upload the dataset card (README.md) to the dataset repo so the Hub displays it."""
+    if not _DATASET_CARD_PATH.is_file():
+        return
+    try:
+        from huggingface_hub import HfApi
+
+        HfApi(token=token).upload_file(
+            path_or_fileobj=str(_DATASET_CARD_PATH),
+            path_in_repo="README.md",
+            repo_id=hf_repo,
+            repo_type="dataset",
+        )
+    except Exception:
+        pass  # Do not fail the push if the card upload fails
+
+
 def build_and_push_dataset(
     all_rows: list[dict],
     hf_repo: str,
     token: str,
 ) -> None:
-    """Build Dataset from rows (with Audio from path; video as bytes) and push to hub."""
-    from datasets import Audio, Dataset, concatenate_datasets, load_dataset
+    """Build Dataset from rows (Audio and Video typed for Hub viewer playback) and push to hub."""
+    from datasets import Audio, Dataset, Video, concatenate_datasets, load_dataset
 
     if not all_rows:
         return
@@ -246,13 +264,16 @@ def build_and_push_dataset(
         "metadata": metadata_strs,
         "segment_data": segment_data_strs,
     })
-    d_new = d_new.cast_column("audio", Audio())
+    # Viewer playback: Audio with 48 kHz (dataset WAV rate); Video feature for player
+    d_new = d_new.cast_column("audio", Audio(sampling_rate=48000))
+    d_new = d_new.cast_column("video", Video())
     try:
         existing = load_dataset(hf_repo, token=token, split="train")
         d = concatenate_datasets([existing, d_new])
     except Exception:
         d = d_new
     d.push_to_hub(hf_repo, token=token, private=False)
+    _upload_dataset_card(hf_repo, token)
 
 
 def load_existing_dataset(hf_repo: str, token: str):
