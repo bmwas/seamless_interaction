@@ -48,6 +48,12 @@ EMOTION_NAMES = [
     "Sadness",
     "Surprise",
 ]
+# For valence-consistency override: negative-valence emotions vs positive-valence
+NEGATIVE_EMOTION_INDICES = (0, 1, 2, 3, 6)  # Anger, Contempt, Disgust, Fear, Sadness
+POSITIVE_EMOTION_INDICES = (4, 7)  # Happiness, Surprise
+POSITIVE_OR_NEUTRAL_INDICES = (4, 5, 7)  # Happiness, Neutral, Surprise
+NEGATIVE_OR_NEUTRAL_INDICES = (0, 1, 2, 3, 5, 6)  # negative + Neutral
+VALENCE_OVERRIDE_THRESHOLD = 0.2
 
 MIN_SEGMENT_FRAMES = 90   # 3 s at 30 Hz
 MAX_SEGMENT_FRAMES = 300  # 10 s at 30 Hz
@@ -271,7 +277,7 @@ def download_participant(
 
 
 def load_emotion_arrays(npz_path: str):
-    """Load emotion_scores (and optionally valence/arousal) from NPZ. Return (scores, T)."""
+    """Load emotion_scores and optionally valence/arousal from NPZ. Return (data, scores, T, valence, arousal)."""
     data = np.load(npz_path)
     key_scores = "movement:emotion_scores"
     if key_scores not in data:
@@ -288,7 +294,25 @@ def load_emotion_arrays(npz_path: str):
             f"Expected movement:emotion_scores shape (T, 8), got {scores.shape}"
         )
     T = scores.shape[0]
-    return data, scores, T
+    valence = None
+    arousal = None
+    if "movement:emotion_valence" in data.files:
+        arr = np.asarray(data["movement:emotion_valence"])
+        if arr.ndim >= 1 and arr.shape[0] >= T:
+            arr = np.squeeze(arr[:T])
+            if arr.ndim == 0:
+                arr = np.broadcast_to(arr, (T,))
+            if arr.shape[0] == T:
+                valence = np.asarray(arr, dtype=np.float64)
+    if "movement:emotion_arousal" in data.files:
+        arr = np.asarray(data["movement:emotion_arousal"])
+        if arr.ndim >= 1 and arr.shape[0] >= T:
+            arr = np.squeeze(arr[:T])
+            if arr.ndim == 0:
+                arr = np.broadcast_to(arr, (T,))
+            if arr.shape[0] == T:
+                arousal = np.asarray(arr, dtype=np.float64)
+    return data, scores, T, valence, arousal
 
 
 def compute_dominant_emotion_per_frame(scores: np.ndarray) -> np.ndarray:
@@ -570,6 +594,10 @@ def write_segment_metadata(
     end_time: float,
     duration_seconds: float,
     dominant_emotion_index: int,
+    *,
+    mean_valence: float | None = None,
+    mean_arousal: float | None = None,
+    emotion_confidence: float | None = None,
 ) -> None:
     metadata = {
         "start_frame": int(start_frame),
@@ -580,6 +608,12 @@ def write_segment_metadata(
         "dominant_emotion_index": int(dominant_emotion_index),
         "dominant_emotion_name": EMOTION_NAMES[int(dominant_emotion_index)],
     }
+    if mean_valence is not None:
+        metadata["mean_valence"] = mean_valence
+    if mean_arousal is not None:
+        metadata["mean_arousal"] = mean_arousal
+    if emotion_confidence is not None:
+        metadata["emotion_confidence"] = emotion_confidence
     path = os.path.join(segment_dir, "metadata.json")
     with open(path, "w") as f:
         json.dump(metadata, f, indent=2)
@@ -602,12 +636,15 @@ def write_segment_emotion_json(
     start_frame: int,
     end_frame: int,
     dominant_emotion_index: int,
+    *,
+    mean_valence: float | None = None,
+    mean_arousal: float | None = None,
+    emotion_confidence: float | None = None,
 ) -> None:
     """
     Write segment_data.json with valence, arousal, ALL emotion labels (emotion_scores:
     Anger, Contempt, Disgust, Fear, Happiness, Neutral, Sadness, Surprise), and any
-    other emotion-related arrays (e.g. EmotionValenceToken, EmotionArousalToken).
-    All per-frame; human-readable.
+    other emotion-related arrays. Includes segment-level mean_valence, mean_arousal, confidence.
     """
     data = np.load(npz_path)
     out = {
@@ -615,6 +652,12 @@ def write_segment_emotion_json(
         "dominant_emotion_name": EMOTION_NAMES[int(dominant_emotion_index)],
         "emotion_names": EMOTION_NAMES,
     }
+    if mean_valence is not None:
+        out["segment_mean_valence"] = mean_valence
+    if mean_arousal is not None:
+        out["segment_mean_arousal"] = mean_arousal
+    if emotion_confidence is not None:
+        out["emotion_confidence"] = emotion_confidence
     for key in data.files:
         if not _is_emotion_key(key):
             continue
@@ -635,10 +678,12 @@ def process_segments(
     segments: list[tuple[int, int, int]],
     fps: float,
     scores: np.ndarray,
+    valence: np.ndarray | None = None,
+    arousal: np.ndarray | None = None,
 ) -> str:
     """
     For each segment: extract video/audio, slice NPZ, write metadata.
-    Dominant emotion per segment is argmax(mean(scores[start:end], axis=0)), not the run label.
+    Dominant emotion = argmax(median(scores)) then valence-consistency override when valence disagrees.
     Returns path to segments directory.
     """
     mp4_path = os.path.join(base_path, f"{file_id}.mp4")
@@ -648,12 +693,33 @@ def process_segments(
     os.makedirs(segments_dir, exist_ok=True)
 
     for idx, (start_frame, end_frame, emotion_index) in enumerate(segments):
-        # Segment-level dominant: average emotion_scores over this segment, then argmax.
         segment_scores = scores[start_frame:end_frame]
-        segment_dominant = int(np.argmax(np.mean(segment_scores, axis=0)))
+        # Robust: median over segment then argmax (reduces outlier frames).
+        med = np.median(segment_scores, axis=0)
+        segment_dominant = int(np.argmax(med))
+        mean_scores = np.mean(segment_scores, axis=0)
+        confidence = float(np.max(mean_scores) - np.partition(mean_scores, -2)[-2])
 
-        # Single source of truth: one start_time and one duration_seconds for BOTH video and audio.
-        # Both extractors receive the exact same numeric values so .wav and .mp4 are 100% synced.
+        mean_valence = None
+        mean_arousal = None
+        if valence is not None and start_frame < valence.shape[0]:
+            mean_valence = float(np.mean(valence[start_frame:end_frame]))
+        if arousal is not None and start_frame < arousal.shape[0]:
+            mean_arousal = float(np.mean(arousal[start_frame:end_frame]))
+
+        # Valence-consistency override: if categorical label disagrees with mean valence, pick best-matching emotion in the correct valence group.
+        if mean_valence is not None:
+            if segment_dominant in NEGATIVE_EMOTION_INDICES and mean_valence > VALENCE_OVERRIDE_THRESHOLD:
+                # Label is negative but valence is positive -> pick best among positive/neutral by mean score
+                segment_dominant = int(
+                    max(POSITIVE_OR_NEUTRAL_INDICES, key=lambda i: mean_scores[i])
+                )
+            elif segment_dominant in POSITIVE_EMOTION_INDICES and mean_valence < -VALENCE_OVERRIDE_THRESHOLD:
+                # Label is positive but valence is negative -> pick best among negative/neutral by mean score
+                segment_dominant = int(
+                    max(NEGATIVE_OR_NEUTRAL_INDICES, key=lambda i: mean_scores[i])
+                )
+
         start_time = start_frame / fps
         end_time = end_frame / fps
         duration_seconds = end_time - start_time
@@ -674,9 +740,19 @@ def process_segments(
             end_time,
             duration_seconds,
             segment_dominant,
+            mean_valence=mean_valence,
+            mean_arousal=mean_arousal,
+            emotion_confidence=confidence,
         )
         write_segment_emotion_json(
-            segment_dir, npz_path, start_frame, end_frame, segment_dominant
+            segment_dir,
+            npz_path,
+            start_frame,
+            end_frame,
+            segment_dominant,
+            mean_valence=mean_valence,
+            mean_arousal=mean_arousal,
+            emotion_confidence=confidence,
         )
         print(f"  Wrote {seg_name} ({start_time:.2f}s–{end_time:.2f}s, {EMOTION_NAMES[segment_dominant]})")
 
@@ -721,13 +797,17 @@ def main() -> None:
     npz_path = os.path.join(base_path, f"{file_id}.npz")
     mp4_path = os.path.join(base_path, f"{file_id}.mp4")
 
-    data, scores, T = load_emotion_arrays(npz_path)
+    data, scores, T, valence, arousal = load_emotion_arrays(npz_path)
     fps, video_frames = get_video_fps_and_frame_count(mp4_path)
     if video_frames > 0 and video_frames != T:
         T_use = min(T, video_frames)
         print(f"Note: NPZ frames={T}, video frames={video_frames}; using first {T_use} frames for alignment.")
         T = T_use
         scores = scores[:T_use]
+        if valence is not None:
+            valence = valence[:T_use]
+        if arousal is not None:
+            arousal = arousal[:T_use]
 
     dominant = compute_dominant_emotion_per_frame(scores)
     runs = find_uniform_emotion_runs(dominant)
@@ -782,7 +862,7 @@ def main() -> None:
         return
 
     print(f"Found {len(segments)} segments (3–10 s, uniform emotion, ≥{min_continuous_speech:.1f} s continuous speech).")
-    segments_dir = process_segments(base_path, file_id, segments, fps, scores)
+    segments_dir = process_segments(base_path, file_id, segments, fps, scores, valence, arousal)
     delete_large_files(base_path, file_id)
     print("All done. Segments saved under {}; original video/audio/npz removed.".format(segments_dir))
 
