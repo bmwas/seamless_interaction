@@ -105,6 +105,34 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Ignore progress log and process all participants from the start (clears progress for --local_dir)",
     )
+    parser.add_argument(
+        "--min_speech_fraction",
+        type=float,
+        default=0.5,
+        metavar="F",
+        help="Minimum fraction of segment that must be speech (passed to segment script)",
+    )
+    parser.add_argument(
+        "--min_continuous_speech",
+        type=float,
+        default=3.0,
+        metavar="SEC",
+        help="Minimum continuous speech in segment, seconds (passed to segment script)",
+    )
+    parser.add_argument(
+        "--vad_merge_gap",
+        type=float,
+        default=2.0,
+        metavar="SEC",
+        help="Max gap between speech intervals to merge as same turn, seconds (passed to segment script)",
+    )
+    parser.add_argument(
+        "--min_segment_sec",
+        type=float,
+        default=None,
+        metavar="SEC",
+        help="Minimum segment length in seconds (e.g. 6 or 8 for longer clips; passed to segment script)",
+    )
     return parser.parse_args()
 
 
@@ -136,6 +164,11 @@ def run_segment_script(
     filelist: str,
     local_dir: str,
     repo_root: Path,
+    *,
+    min_speech_fraction: float = 0.5,
+    min_continuous_speech: float = 3.0,
+    vad_merge_gap: float = 2.0,
+    min_segment_sec: float | None = None,
 ) -> subprocess.CompletedProcess:
     cmd = [
         sys.executable,
@@ -146,11 +179,15 @@ def run_segment_script(
         filelist,
         "--local_dir",
         local_dir,
+        "--min_speech_fraction",
+        str(min_speech_fraction),
         "--min_continuous_speech",
-        "3",
+        str(min_continuous_speech),
         "--vad_merge_gap",
-        "2",
+        str(vad_merge_gap),
     ]
+    if min_segment_sec is not None:
+        cmd.extend(["--min_segment_sec", str(min_segment_sec)])
     return subprocess.run(cmd, capture_output=True, text=True, cwd=str(repo_root))
 
 
@@ -327,7 +364,14 @@ def main() -> None:
     for i, file_id in enumerate(todo):
         print(f"[{i + 1}/{len(todo)}] Processing {file_id} ...")
         result = run_segment_script(
-            file_id, args.filelist, local_dir, _REPO_ROOT
+            file_id,
+            args.filelist,
+            local_dir,
+            _REPO_ROOT,
+            min_speech_fraction=args.min_speech_fraction,
+            min_continuous_speech=args.min_continuous_speech,
+            vad_merge_gap=args.vad_merge_gap,
+            min_segment_sec=args.min_segment_sec,
         )
         if result.returncode != 0:
             progress[file_id] = {

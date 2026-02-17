@@ -129,6 +129,13 @@ def parse_args() -> argparse.Namespace:
         metavar="SEC",
         help=f"Max gap between speech intervals to merge as same turn, in seconds (default: {VAD_MERGE_GAP_SEC:.1f}). Gaps below this = thinking pause (merged); above = waiting for other person (split).",
     )
+    parser.add_argument(
+        "--min_segment_sec",
+        type=float,
+        default=None,
+        metavar="SEC",
+        help="Minimum segment length in seconds (e.g. 6 or 8 for longer clips). If set, segments shorter than this are dropped. Default: use 3 s minimum.",
+    )
     return parser.parse_args()
 
 
@@ -310,28 +317,32 @@ def find_uniform_emotion_runs(dominant: np.ndarray) -> list[tuple[int, int, int]
 def split_runs_into_segments(
     runs: list[tuple[int, int, int]],
     fps: float,
+    min_segment_sec: float | None = None,
 ) -> list[tuple[int, int, int]]:
     """
-    Apply length rules: drop < 3 s, keep 3–10 s as one segment, break > 10 s into 10 s chunks.
+    Apply length rules: drop below min length, keep up to 10 s as one segment, break > 10 s into 10 s chunks.
     Uses fps so max duration never exceeds 10 s in wall-clock time (e.g. 29.97 fps -> 299 frames).
     Returns list of (start_frame, end_frame, emotion_index).
     """
+    min_frames = (
+        int(fps * min_segment_sec) if min_segment_sec is not None else MIN_SEGMENT_FRAMES
+    )
     max_frames = min(MAX_SEGMENT_FRAMES, int(fps * 10.0))
-    if max_frames < MIN_SEGMENT_FRAMES:
-        max_frames = MIN_SEGMENT_FRAMES
+    if max_frames < min_frames:
+        max_frames = min_frames
     segments = []
     for start, end, em in runs:
         n = end - start
-        if n < MIN_SEGMENT_FRAMES:
+        if n < min_frames:
             continue
         if n <= max_frames:
             segments.append((start, end, em))
             continue
-        # Break into max_frames (≤10 s) chunks; remainder ≥ 3 s kept, else dropped
+        # Break into max_frames (≤10 s) chunks; remainder ≥ min_frames kept, else dropped
         s = start
         while s < end:
             seg_end = min(s + max_frames, end)
-            if seg_end - s >= MIN_SEGMENT_FRAMES:
+            if seg_end - s >= min_frames:
                 segments.append((s, seg_end, em))
             s = seg_end
     return segments
@@ -720,7 +731,7 @@ def main() -> None:
 
     dominant = compute_dominant_emotion_per_frame(scores)
     runs = find_uniform_emotion_runs(dominant)
-    segments = split_runs_into_segments(runs, fps)
+    segments = split_runs_into_segments(runs, fps, args.min_segment_sec)
 
     if not segments:
         print("No segments of 3–10 s with uniform dominant emotion found. Exiting.")
@@ -734,7 +745,7 @@ def main() -> None:
     # If threshold is strict and no segments pass, keep segments with any speech at all (exclude only pure listening).
     if not segments and min_speech_fraction > 0:
         runs = find_uniform_emotion_runs(dominant)
-        segments_full = split_runs_into_segments(runs, fps)
+        segments_full = split_runs_into_segments(runs, fps, args.min_segment_sec)
         segments = filter_segments_by_speech(segments_full, fps, speech_intervals, 0.0)
         if segments:
             print(f"No segments had ≥{min_speech_fraction:.0%} speech; keeping {len(segments)} segment(s) that contain any speech (person talking at least briefly).")
